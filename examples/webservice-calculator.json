@@ -1,0 +1,24 @@
+{
+  "Version": 1,
+  "Items": [
+    {
+      "Id": "example-soap11-add",
+      "Name": "WebService 示例：10 + 20",
+      "IsFolder": false,
+      "Children": [],
+      "Method": "POST",
+      "RequestType": "SOAP 1.1",
+      "SoapAction": "http://tempuri.org/Add",
+      "AutoSoapAction": true,
+      "WsMethod": "Add",
+      "WsNamespace": "http://tempuri.org/",
+      "WsParams": [
+        { "Name": "intA", "Value": "10" },
+        { "Name": "intB", "Value": "20" }
+      ],
+      "Status": "开发中",
+      "Url": "http://www.dneonline.com/calculator.asmx",
+      "Headers": "Accept: text/xml\r\nUser-Agent: ApiStudio/1.0"
+    }
+  ]
+}

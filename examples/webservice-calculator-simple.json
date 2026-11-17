@@ -1,0 +1,19 @@
+{
+  "Version": 1,
+  "Items": [
+    {
+      "Id": "example-soap11-add-simple",
+      "Name": "WebService 简写示例：10 + 20",
+      "IsFolder": false,
+      "Children": [],
+      "Method": "POST",
+      "RequestType": "SOAP 1.1",
+      "SoapAction": "",
+      "AutoSoapAction": true,
+      "Status": "开发中",
+      "Url": "http://www.dneonline.com/calculator.asmx",
+      "Headers": "Accept: text/xml",
+      "Body": "<Add xmlns=\"http://tempuri.org/\">\r\n  <intA>10</intA>\r\n  <intB>20</intB>\r\n</Add>"
+    }
+  ]
+}

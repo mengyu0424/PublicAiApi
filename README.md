@@ -1,2 +1,116 @@
-# PublicAiApi
-自制版API访问软件
+# API Studio
+
+一个基于 **WPF / .NET Framework 4.8** 的接口调试工具，使用中文界面。窗口、弹窗和 JSON 编辑器均使用 WPF 控件。
+
+## 运行
+
+直接双击 `ApiStudio\bin\Release\ApiStudio.exe`。
+
+运行需要安装 **.NET Framework 4.8 或 4.8.1**。复制程序到其他电脑时，请保留同目录的依赖 DLL、`ApiStudio.exe.config` 和 `Data` 文件夹。
+
+开发使用 **.NET 9 SDK（9.0.308）** 和 **.NET Framework 4.8 Developer Pack**，构建时通过 NuGet 还原 `System.Text.Json` 及其依赖。仓库里的 `global.json` 已把 SDK 固定为 `9.0.308`，装了该版本即可直接编译。可用支持 .NET 9 SDK 的 Visual Studio 打开 `ApiStudio.sln`，将 `ApiStudio` 设为启动项目，按 F5。
+
+命令行编译：
+
+```powershell
+.\build.ps1
+```
+
+## 已实现
+
+- GET、POST、PUT；异步发送，60 秒超时，可取消。
+- 两种调用方式：顶部「调用方式」可切换 **API 接口** 与 **WebService 接口**。API 用原始请求体（JSON / 文本）；WebService 用表格化入参。
+- WebService 表格入参：地址里的 `?op=` 会自动填成方法名（也可手动改），填写命名空间后点「＋ 添加入参」逐行添加「入参名称 / 入参值」，发送时自动拼成 SOAP 报文（参数值自动 XML 转义）。SOAP 的 Action 请求头按「命名空间 + 方法名」全自动生成，无需填写。内部兼容 SOAP 1.1 / 1.2，自动使用 POST 和对应 Content-Type；旧版手填 XML 的接口打开时会自动解析成表格。
+- 左侧多层文件夹、接口树和名称/地址搜索。
+- 新建文件夹和接口；在根目录新建接口时可填写可选目录，同级同名目录会复用；选中文件夹时直接在该文件夹内创建接口。
+- 拖动接口或文件夹到行上缘/下缘调整顺序，插入线提示位置；拖到文件夹中间移入，拖到列表空白处移到根目录；右键也可移到根目录。顺序自动保存。
+- 右键菜单按选中项目显示操作；接口菜单支持重命名、复制、修改状态和删除，文件夹与空白处提供新建入口。
+- 接口支持“开发中、测试中、调试中、已完成”四种状态，可在编辑区或右键菜单中修改，自动保存并随工作空间导入/导出；旧数据默认“开发中”。
+  左侧列表与状态下拉框用彩色圆点区分：开发中为蓝色、测试中为橙色、调试中为紫色、已完成为绿色。
+- 编辑请求地址、原始请求体、自定义请求头。
+- Query 参数编辑，每行 `key=value`，点击“应用到地址”自动编码。
+- JSON 格式化、压缩、语法着色和行号；格式化保留数字原文及属性顺序。请求体与响应体双击可选中完整的引号内文本（不含两端引号，保留转义原文），或完整数字、布尔值和 null。
+  `{}` 和 `[]` 按嵌套层级循环使用六种颜色，同一对括号颜色一致；字符串中的括号不参与配对，未配对或错配括号标红。编辑后自动刷新颜色，并保留选区、滚动位置与撤销记录。
+  JSON 编辑区使用 WPF 原生文本框处理输入、选区、滚动和撤销，独立绘制语法颜色与行号；高亮不会修改文本或污染撤销历史。粘贴仅接收纯文本，格式化与压缩可整步撤销。
+- 响应体、响应头、HTTP 状态、请求耗时、响应大小和请求时间。
+- 非 2xx HTTP 响应也能查看内容；连接错误在响应区显示。
+- 复制响应、另存响应、导入/导出整个工作空间。
+- 编辑后自动保存，重新启动恢复接口及最近一次响应。
+- 统一 WPF 样式的下拉框、输入框、按钮、右键菜单、应用内弹窗和分隔条；支持键盘操作、中文输入与复制粘贴；导入/导出及另存为使用系统文件选择器。
+- 右上角提供“跟随系统、浅色、深色”主题选择，默认跟随 Windows 的应用主题；系统主题变化时自动更新，JSON 高亮、菜单和应用内弹窗同步适配。选择单独保存在 `Data\settings.json`，重启后恢复。
+- 使用系统标题栏，支持窗口拖动、边缘缩放、最大化和还原；启动时默认最大化。侧栏宽度、请求与响应区分隔高度可以拖动，最大化与普通窗口各自记住位置，重启恢复。保留原有数据与布局文件格式。
+
+## 使用
+
+1. 没有接口时，右侧显示“新建接口”和“导入目录”两个入口；创建或选择接口后进入调试界面。导入支持本工具导出的 JSON 文件。
+   顶部接口名称可以直接点击修改，左侧树会同步更新并自动保存；按 Enter 或离开输入框结束编辑，空名称会恢复为上一次有效名称。
+2. 选择请求方法并输入完整的 `http://` 或 `https://` 地址。
+3. 在“请求头”中每行填写 `名称: 值`，例如：
+
+   ```text
+   Content-Type: application/json
+   Authorization: Bearer your-token
+   ```
+
+4. 调用方式选 **API 接口** 时，POST、PUT 在“请求体”中填写输入内容，默认使用 JSON 内容类型；发送其他文本格式（含手写 SOAP XML）时可修改 `Content-Type`。GET 使用 URL / Query 参数，不发送请求体。需要表格化填写 WebService 入参时选 **WebService 接口**，见下方说明。
+5. 点击“发送”，下方查看响应。
+
+### WebService（表格化入参 / SOAP）
+
+1. 在请求地址下方的“调用方式”中选择 **WebService 接口**。请求方法自动设为 POST，入参区从 JSON 编辑器切换为表格。
+2. 地址直接填服务调用地址即可，**方法名会自动从地址里的 `?op=` 取出**：例如 `http://100.2.2.217:8089/HospitalService.asmx?op=GetBoxInfo`，方法名就是 `GetBoxInfo`；写成 `.../HospitalService.asmx/GetBoxInfo` 也支持。方法名输入框仍可手动修改，手动改过之后不会被地址覆盖。
+3. **命名空间**默认 `http://tempuri.org/`，对应方法元素的 `xmlns`。服务在 WSDL 里声明了其他 `targetNamespace` 时改成对应值。
+4. 点击 **＋ 添加入参** 增加一行，在行内填写 **入参名称** 和 **入参值**；例如两行 `intA = 10`、`intB = 20`。每行右侧的 ✕ 可删除该行。空名称的行会被忽略。
+5. **Action 无需填写**。它是 SOAP 请求头里告诉服务“调用哪个方法”的标识，程序按「命名空间 + 方法名」自动生成（例如 `http://tempuri.org/GetBoxInfo`），在调用方式右侧以灰色文字显示，方便核对。
+6. 点击“发送”。程序把表格拼成方法 XML（如 `<Add xmlns="http://tempuri.org/"><intA>10</intA><intB>20</intB></Add>`），自动补齐 SOAP Envelope 后发送；**参数值中的 `&`、`<`、`>` 会自动转义**，无需手动处理。XML 响应及 HTTP 500 的 SOAP Fault 均可查看，响应按 XML 着色并可格式化 / 另存为。
+
+表格入参、方法名和命名空间都会自动保存，并随复制、导入、导出保留。旧版本用手填 XML 的接口打开时，会尝试从请求体解析出方法名、命名空间和入参并填入表格；内部仍按原 SOAP 版本（1.1 / 1.2）发送，界面不再单独提供版本选项。当前不解析 WSDL 或自动生成方法参数。
+
+程序默认发送 `User-Agent: ApiStudio/1.0`，兼容拒绝无客户端标识请求的网关；在请求头中显式填写 User-Agent 时使用自定义值。可通过“导入目录”载入 `examples\webservice-calculator.json` 体验表格入参，测试 `10 + 20 = 30`；`examples\webservice-calculator-simple.json` 是旧版手填 XML 格式，导入后会自动解析成表格，可用于验证兼容。
+
+SOAP 请求头依据 [SOAP 1.1 HTTP 绑定](https://www.w3.org/TR/2000/NOTE-SOAP-20000508/#_Toc478383526) 和 [SOAP 1.2 Action](https://www.w3.org/TR/soap12-part2/#ActionFeature) 实现。
+Action 拼接规则参考 [ASP.NET WebService 默认 Action 约定](https://learn.microsoft.com/en-us/dotnet/api/system.web.services.webserviceattribute.namespace?view=netframework-4.8.1)，不保证适用于所有服务。
+
+首次启动使用空白工作空间，不自动添加示例接口。删除最后一个接口或只剩空目录时，也会显示新建/导入入口。已有接口和响应会正常保留。
+
+## 本地数据
+
+配置保存在 **可执行程序所在目录的 `Data\workspace.json`**，包含请求头、请求体及最近响应。该目录需要写入权限；可将整个发布目录放在自己的可写目录使用。
+
+从旧版升级时，继续使用原来的 `ApiStudio\bin\Release` 目录，即可读取原有工作空间、主题与分隔位置。JSON 存储使用 `System.Text.Json`，保留请求体和响应体中的文本、数字精度与转义原文。
+
+保存会保留上一版 `workspace.json.bak`。导入会追加到现有集合，支持本工具导出的 JSON 格式。导出文件也包含请求头和响应，请按实际内容保管。
+
+单次响应显示上限为 16 MB；超过 200,000 字符时跳过自动格式化和着色，仍可查看原文。当前版本支持 JSON、SOAP XML 和原始文本请求，尚未加入文件上传、环境变量、脚本、历史版本和认证配置面板。
+
+## 快捷键
+
+| 快捷键 | 功能 |
+| --- | --- |
+| Ctrl + Enter | 发送请求 |
+| Ctrl + S | 保存工作空间 |
+| Ctrl + N | 新建接口 |
+| F2 | 重命名树中选中的项目 |
+
+## 验证
+
+```powershell
+.\test.ps1
+```
+
+测试以 .NET Framework 4.8 为目标，通过本机随机端口的 HTTP 回显服务验证网络功能。核心测试覆盖三种请求方法、中文 JSON、UTF-8/GB2312/GBK/GB18030 响应、请求头、错误响应、接收响应头前及读取正文时的取消、JSON 精度与转义、保存/重载、备份、空集合、目录移动与排序、状态持久化与旧数据兼容。可传入 `-LegacyDataDirectory`，读取指定 `Data` 目录中的 `workspace.json`，并在临时文件中验证读写。
+WPF 测试使用隔离工作空间，覆盖已有接口加载、搜索、名称与状态编辑、Query 编码、主题菜单、分隔条拖动与分状态恢复、请求发送、JSON 完整值选择、撤销重做、高亮实际绘制、大文本滚动，并检查程序没有 WinForms 及托管桥接程序集依赖。可用 `.\test.ps1 -Configuration Debug` 验证 Debug 版本。
+
+## 主要源码
+
+- `StudioWindow.xaml` / `StudioStyles.xaml`：WPF 主窗口布局与控件样式。
+- `StudioWindow.xaml.cs`：编辑、自动保存、请求发送、主题和布局恢复。
+- `StudioWindow.Collections.cs`：接口树、搜索、拖拽排序、右键菜单及新建/重命名弹窗。
+- `JsonEditor.cs` / `JsonSyntax.cs`：WPF JSON 编辑器、语法高亮、行号和完整值选择。
+- `WpfTheme.cs` / `ThemePreferences.cs`：主题配色、系统主题读取与外观偏好存储。
+- `SplitterPositionStore.cs`：最大化与普通窗口的分隔位置持久化。
+- `WorkspaceTree.cs`：目录创建、移动、排序及层级校验。
+- `tools\BrandArtwork.cs`：离线 Logo 绘制；`tools\generate-brand-assets.ps1` 可重新生成 PNG 和多尺寸 ICO。
+- `Models.cs`：数据模型、JSON 工具、本地存储和示例集合。
+- `RequestService.cs`：HTTP 请求、编码处理、取消与响应大小限制。
+- `WebService.cs`：调用方式映射、SOAP 版本与 Action 推断、表格入参生成 / 解析方法 XML、请求头默认值、XML 格式化与压缩。

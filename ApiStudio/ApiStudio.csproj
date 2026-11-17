@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>ApiStudio</RootNamespace>
+    <AssemblyName>ApiStudio</AssemblyName>
+    <StartupObject>ApiStudio.Program</StartupObject>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <ApplicationIcon>Assets\ApiStudio.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Net.Http"/>
+    <PackageReference Include="System.Text.Json" Version="10.0.14"/>
+    <EmbeddedResource Include="Assets\ApiStudio.ico" LogicalName="ApiStudio.Assets.ApiStudio.ico"/>
+    <Resource Include="Assets\ApiStudio.png"/>
+  </ItemGroup>
+</Project>
