@@ -108,16 +108,15 @@ WPF 测试使用隔离工作空间，覆盖自定义标题栏的拖动 / 缩放�
 
 ## 主要源码
 
-- `StudioWindow.xaml` / `StudioStyles.xaml`：WPF 主窗口布局与控件样式。
-- `StudioChrome.cs` / `StudioWindow.Chrome.cs`：自定义标题栏、窗口操作和显示器工作区边界。
-- `StudioDialog.xaml` / `StudioDialog.xaml.cs`：统一提示、确认及名称输入弹窗。
-- `StudioWindow.xaml.cs`：编辑、自动保存、请求发送、主题和布局恢复。
-- `StudioWindow.Collections.cs`：接口树、搜索、拖拽排序、右键菜单及新建/重命名弹窗。
-- `JsonEditor.cs` / `JsonSyntax.cs`：WPF JSON 编辑器、语法高亮、行号和完整值选择。
-- `WpfTheme.cs` / `ThemePreferences.cs`：主题配色、系统主题读取与外观偏好存储。
-- `SplitterPositionStore.cs`：最大化与普通窗口的分隔位置持久化。
-- `WorkspaceTree.cs`：目录创建、移动、排序及层级校验。
-- `tools\BrandArtwork.cs`：离线 Logo 绘制；`tools\generate-brand-assets.ps1` 可重新生成 PNG 和多尺寸 ICO。
-- `Models.cs`：数据模型、JSON 工具、本地存储和示例集合。
-- `RequestService.cs`：HTTP 请求、编码处理、取消与响应大小限制。
-- `WebService.cs`：调用方式映射、SOAP 版本与 Action 推断、表格入参生成 / 解析方法 XML、请求头默认值、XML 格式化与压缩。
+`ApiStudio` 项目按职责分目录，入口 `Program.cs` 保留在项目根目录。解决方案资源管理器中，主窗口的分部类归在 `StudioWindow.xaml` 下。
+
+| 目录 | 主要文件与职责 |
+| --- | --- |
+| `Views` | `StudioWindow.xaml` 及分部类：主窗口、编辑、自动保存、请求发送、接口树和拖拽排序；`StudioDialog.xaml` 及后台代码：统一弹窗；`StudioChrome.cs`：窗口边框和显示器工作区处理。 |
+| `Controls` | `JsonEditor.cs`、`JsonSyntax.cs`、`XmlSyntax.cs`：编辑器、行号、缩进及 JSON / XML 语法高亮。 |
+| `Services` | `RequestService.cs`：HTTP 请求、编码、取消及响应大小限制；`WebService.cs`：SOAP 调用、表格入参、Action 推断和 XML 工具。 |
+| `Workspace` | `Models.cs`：数据模型、JSON 工具、本地存储和示例集合；`WorkspaceTree.cs`：目录移动、排序及层级校验；`SplitterPositionStore.cs`：窗口分隔位置持久化。 |
+| `Themes` | `StudioStyles.xaml`：控件样式；`WpfTheme.cs`：主题配色与系统主题读取；`ThemePreferences.cs`：外观偏好存储。 |
+| `Assets` | 程序 PNG 和多尺寸 ICO 图标。 |
+
+`tools\BrandArtwork.cs` 负责离线 Logo 绘制，运行 `tools\generate-brand-assets.ps1` 可重新生成图标；`tests` 目录包含核心功能与 WPF 回归检查。

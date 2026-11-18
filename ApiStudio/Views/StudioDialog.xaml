@@ -6,7 +6,7 @@
         FocusManager.IsFocusScope="True" KeyboardNavigation.TabNavigation="Cycle" KeyboardNavigation.ControlTabNavigation="Cycle"
         Background="{DynamicResource Surface}" Foreground="{DynamicResource Ink}"
         UseLayoutRounding="True" SnapsToDevicePixels="True" TextOptions.TextFormattingMode="Display">
-    <UserControl.Resources><ResourceDictionary Source="StudioStyles.xaml"/></UserControl.Resources>
+    <UserControl.Resources><ResourceDictionary Source="../Themes/StudioStyles.xaml"/></UserControl.Resources>
     <Border Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="10">
         <Grid x:Name="DialogRoot">
             <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -17,7 +17,7 @@
                     <Thumb.Template><ControlTemplate TargetType="Thumb"><Border Background="Transparent"/></ControlTemplate></Thumb.Template>
                 </Thumb>
                 <StackPanel Orientation="Horizontal" Margin="22,0,0,0" IsHitTestVisible="False">
-                    <Image Source="Assets/ApiStudio.png" Width="19" Height="19" Margin="0,0,8,0"/>
+                    <Image Source="../Assets/ApiStudio.png" Width="19" Height="19" Margin="0,0,8,0"/>
                     <TextBlock Text="API Studio" Foreground="{DynamicResource Muted}" FontWeight="SemiBold" FontSize="12"/>
                 </StackPanel>
                 <Button x:Name="DialogCloseButton" HorizontalAlignment="Right" Width="34" Height="32" Margin="0,0,7,0"

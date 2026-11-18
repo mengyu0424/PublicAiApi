@@ -20,4 +20,9 @@
     <EmbeddedResource Include="Assets\ApiStudio.ico" LogicalName="ApiStudio.Assets.ApiStudio.ico"/>
     <Resource Include="Assets\ApiStudio.png"/>
   </ItemGroup>
+  <ItemGroup>
+    <Compile Update="Views\StudioWindow.Collections.cs;Views\StudioWindow.Chrome.cs">
+      <DependentUpon>StudioWindow.xaml</DependentUpon>
+    </Compile>
+  </ItemGroup>
 </Project>

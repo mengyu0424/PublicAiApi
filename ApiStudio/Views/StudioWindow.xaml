@@ -2,14 +2,14 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
-        Title="API Studio · 接口调试工作台" Icon="Assets/ApiStudio.png"
+        Title="API Studio · 接口调试工作台" Icon="../Assets/ApiStudio.png"
         Width="1440" Height="940" MinWidth="1140" MinHeight="800"
         WindowState="Maximized" WindowStartupLocation="CenterScreen" WindowStyle="None"
         FontFamily="Microsoft YaHei UI" FontSize="13"
         Background="{DynamicResource Canvas}" Foreground="{DynamicResource Ink}"
         UseLayoutRounding="True" SnapsToDevicePixels="True" TextOptions.TextFormattingMode="Display">
     <Window.Resources>
-        <ResourceDictionary Source="StudioStyles.xaml"/>
+        <ResourceDictionary Source="../Themes/StudioStyles.xaml"/>
     </Window.Resources>
     <Border x:Name="WindowFrame" Background="{DynamicResource Canvas}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="10">
     <Grid x:Name="WindowRoot">
@@ -59,7 +59,7 @@
                     <RowDefinition Height="34"/>
                 </Grid.RowDefinitions>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <Image Source="Assets/ApiStudio.png" Width="44" Height="44" Margin="0,0,12,0"/>
+                    <Image Source="../Assets/ApiStudio.png" Width="44" Height="44" Margin="0,0,12,0"/>
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="API Studio" Foreground="{DynamicResource RailText}" FontSize="26" FontWeight="Bold"/>
                     </StackPanel>
@@ -104,7 +104,7 @@
             <Grid Grid.Row="1">
                 <Border x:Name="EmptyPage" Style="{StaticResource Card}" MaxWidth="560" Height="280" VerticalAlignment="Center" Padding="30">
                     <StackPanel VerticalAlignment="Center">
-                        <Image Source="Assets/ApiStudio.png" Width="48" Height="48" Margin="0,0,0,13"/>
+                        <Image Source="../Assets/ApiStudio.png" Width="48" Height="48" Margin="0,0,0,13"/>
                         <TextBlock Text="开始调试你的第一个接口" FontWeight="SemiBold" FontSize="22" TextAlignment="Center"/>
                         <TextBlock Text="新建一个接口，或导入已保存的接口目录。" Style="{StaticResource MutedText}" TextAlignment="Center" Margin="0,7,0,18"/>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
