@@ -367,6 +367,27 @@
         </Setter>
     </Style>
 
+    <Style x:Key="FolderIcon" TargetType="Path">
+        <Setter Property="Width" Value="18"/>
+        <Setter Property="Height" Value="16"/>
+        <Setter Property="Stretch" Value="Uniform"/>
+        <Setter Property="HorizontalAlignment" Value="Left"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="IsHitTestVisible" Value="False"/>
+        <Setter Property="Fill" Value="Transparent"/>
+        <Setter Property="Stroke" Value="{DynamicResource RailMuted}"/>
+        <Setter Property="StrokeThickness" Value="1.4"/>
+        <Setter Property="StrokeLineJoin" Value="Round"/>
+        <Setter Property="StrokeStartLineCap" Value="Round"/>
+        <Setter Property="StrokeEndLineCap" Value="Round"/>
+        <Setter Property="Data" Value="M2,5 V3.5 Q2,2 3.5,2 H6.5 L8.5,4 H13 Q14,4 14,5.5 V12 Q14,13.5 12.5,13.5 H3.5 Q2,13.5 2,12 Z"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsExpanded, RelativeSource={RelativeSource AncestorType=TreeViewItem}}" Value="True">
+                <Setter Property="Stroke" Value="{DynamicResource Accent}"/>
+                <Setter Property="Data" Value="M2,6 V3.5 Q2,2 3.5,2 H6.5 L8.5,4 H13 Q14,4 14,5.5 V6 M2,6 H14.5 L12.5,13.5 H3.5 Q2,13.5 2,12 Z"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
     <Style TargetType="TreeViewItem">
         <Setter Property="Foreground" Value="{DynamicResource RailText}"/>
         <Setter Property="Template">

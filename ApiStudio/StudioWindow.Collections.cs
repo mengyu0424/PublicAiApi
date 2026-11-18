@@ -70,10 +70,7 @@ namespace ApiStudio
             {
                 header.Children.Add(new System.Windows.Shapes.Path
                 {
-                    Width = 15, Height = 12, Stretch = Stretch.Fill,
-                    HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center,
-                    Fill = new SolidColorBrush(Color.FromRgb(213, 176, 100)),
-                    Data = Geometry.Parse("M0,2 L5,2 L7,4 L15,4 L15,13 L0,13 Z")
+                    Style = (Style)FindResource("FolderIcon")
                 });
                 node.ToolTip = item.Name;
             }
@@ -81,19 +78,12 @@ namespace ApiStudio
             {
                 header.Children.Add(new TextBlock { Text = item.Method, Foreground = Brush(Theme.MethodColor(item.Method)), FontWeight = FontWeights.Bold, FontSize = 11, VerticalAlignment = VerticalAlignment.Center });
                 string status = ApiStatus.Normalize(item.Status);
-                var badge = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
-                var caption = new TextBlock { Text = status, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0), Visibility = Visibility.Collapsed };
-                caption.SetResourceReference(TextBlock.ForegroundProperty, "RailMuted");
-                badge.Children.Add(caption);
-                badge.Children.Add(new System.Windows.Shapes.Ellipse { Width = 7, Height = 7, Fill = Brush(Theme.StatusColor(status)), VerticalAlignment = VerticalAlignment.Center });
-                Grid.SetColumn(badge, 2); header.Children.Add(badge);
-                header.SizeChanged += delegate
+                var badge = new System.Windows.Shapes.Ellipse
                 {
-                    var font = new Typeface(name.FontFamily, name.FontStyle, name.FontWeight, name.FontStretch);
-                    var text = new FormattedText(name.Text, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                        font, name.FontSize, Brushes.Transparent, VisualTreeHelper.GetDpi(name).PixelsPerDip);
-                    caption.Visibility = header.ActualWidth >= text.WidthIncludingTrailingWhitespace + 108 ? Visibility.Visible : Visibility.Collapsed;
+                    Width = 7, Height = 7, Fill = Brush(Theme.StatusColor(status)),
+                    VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0)
                 };
+                Grid.SetColumn(badge, 2); header.Children.Add(badge);
                 node.ToolTip = item.Name + "  ·  " + item.Method + "  ·  " + status;
             }
             var cue = new Border { IsHitTestVisible = false, CornerRadius = new CornerRadius(4) };
