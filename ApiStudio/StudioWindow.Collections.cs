@@ -162,16 +162,8 @@ namespace ApiStudio
 
         private bool EditName(string title, string initial, string directoryHint, out string name, out string directory)
         {
-            var dialog = new Window
-            {
-                Owner = this, Title = title, Width = 442, SizeToContent = SizeToContent.Height,
-                ResizeMode = ResizeMode.NoResize, WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                ShowInTaskbar = false, FontFamily = FontFamily, FontSize = FontSize
-            };
-            dialog.Resources.MergedDictionaries.Add(Resources);
-            dialog.SetResourceReference(BackgroundProperty, "Surface");
-            dialog.SetResourceReference(ForegroundProperty, "Ink");
-            var panel = new StackPanel { Margin = new Thickness(22) };
+            var dialog = new StudioDialog(this, title);
+            var panel = new StackPanel();
             if (directoryHint != null)
                 panel.Children.Add(new TextBlock { Text = directoryHint, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) });
             panel.Children.Add(new TextBlock { Text = "名称", Margin = new Thickness(0, 0, 0, 5) });
@@ -186,15 +178,12 @@ namespace ApiStudio
                 System.Windows.Automation.AutomationProperties.SetName(directoryInput, "目录（可选）");
                 panel.Children.Add(directoryInput);
             }
-            var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 18, 0, 0) };
-            var cancel = new Button { Content = "取消", MinWidth = 82, IsCancel = true };
-            var confirm = new Button { Content = "确定", MinWidth = 82, IsDefault = true, Margin = new Thickness(9, 0, 0, 0), Style = (Style)FindResource("PrimaryButton"), IsEnabled = initial.Trim().Length > 0 };
+            var confirm = dialog.DialogConfirmButton;
+            confirm.IsEnabled = initial.Trim().Length > 0;
             input.TextChanged += delegate { confirm.IsEnabled = input.Text.Trim().Length > 0; };
-            confirm.Click += delegate { dialog.DialogResult = true; };
-            buttons.Children.Add(cancel); buttons.Children.Add(confirm); panel.Children.Add(buttons);
-            dialog.Content = panel;
+            dialog.DialogBody.Content = panel;
             dialog.Loaded += delegate { input.Focus(); input.SelectAll(); };
-            bool accepted = dialog.ShowDialog() == true;
+            bool accepted = dialog.ShowModal();
             name = input.Text.Trim();
             directory = directoryInput == null ? "" : directoryInput.Text.Trim();
             return accepted;
@@ -241,7 +230,7 @@ namespace ApiStudio
         private void DeleteItem(ApiItem item)
         {
             string question = "确定删除“" + item.Name + "”" + (item.IsFolder ? "及其所有接口" : "") + "？";
-            if (MessageBox.Show(this, question, "删除确认", MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
+            if (!StudioDialog.CreateMessage(this, question, "删除确认", true).ShowModal()) return;
             Siblings(ParentOf(item)).Remove(item);
             current = null;
             RebuildTree(null); SelectFirstRequest(); MarkDirty();

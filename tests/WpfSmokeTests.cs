@@ -4,14 +4,19 @@ using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.Versioning;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
+using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Shell;
 using System.Windows.Threading;
 using ApiStudio;
 
@@ -99,6 +104,7 @@ internal static class WpfSmokeTests
             Check(Element<Grid>(window, "EditorPage").IsVisible && editor.IsVisible && editor is TextBox,
                 "the request editor is a visible native WPF control");
             Check(sidebar.Width.Value == 354 && requestRow.Height.Value == 261, "WPF restores existing normal-window splitter files");
+            ChromeUi(window);
             search.Text = "cancel"; Pump();
             var filtered = (TreeViewItem)tree.Items[0];
             Check(filtered.Items.Count == 1 && ((ApiItem)((TreeViewItem)filtered.Items[0]).Tag).Name.Contains("作废"),
@@ -131,6 +137,7 @@ internal static class WpfSmokeTests
             theme.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
             ((MenuItem)theme.ContextMenu.Items[2]).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             theme.ContextMenu.IsOpen = false; Pump();
+            DialogUi(window, output);
 
             Drag(Element<GridSplitter>(window, "SidebarDivider"), 37, 0);
             Drag(Element<GridSplitter>(window, "PayloadDivider"), 0, 24);
@@ -169,6 +176,12 @@ internal static class WpfSmokeTests
     private static void EditorUi(StudioWindow window, JsonEditor json)
     {
         var editor = json.TextBox;
+        ScrollBarUi(window, json);
+        EditorDeletionUi(json);
+        ContinuousRenderingUi(json);
+        PairedSymbolsUi(json);
+        AutoIndentUi(json);
+        TabIndentUi(json);
         SymbolInputUi(window, json);
         const string compact = "{\"中文\":\"含\\\"引号与{}[]\",\"number\":-1.2e+3,\"items\":[true,false,null,{\"nested\":[]}]}";
         json.Content = compact;
@@ -229,6 +242,605 @@ internal static class WpfSmokeTests
         json.Content = compact;
     }
 
+    private static void ScrollBarUi(StudioWindow window, JsonEditor json)
+    {
+        string line = "  \"value\": \"" + new string('x', 360) + "\"";
+        string body = "{\n" + string.Join(",\n", Array.ConvertAll(new int[120], x => line)) + "\n}";
+        json.Content = body;
+        var editor = json.TextBox;
+        editor.Select(4, 3); Pump();
+        var scroll = (ScrollViewer)editor.Template.FindName("PART_ContentHost", editor);
+        var vertical = (ScrollBar)scroll.Template.FindName("PART_VerticalScrollBar", scroll);
+        var horizontal = (ScrollBar)scroll.Template.FindName("PART_HorizontalScrollBar", scroll);
+        var verticalTrack = (Track)vertical.Template.FindName("PART_Track", vertical);
+        var horizontalTrack = (Track)horizontal.Template.FindName("PART_Track", horizontal);
+        Check(vertical.IsVisible && horizontal.IsVisible && vertical.ActualWidth == 12 && horizontal.ActualHeight == 12,
+            "custom scrollbars use slim tracks (vertical=" + vertical.ActualWidth + ", horizontal=" + horizontal.ActualHeight + ")");
+        Check(verticalTrack.Thumb.ActualHeight >= 24 && horizontalTrack.Thumb.ActualWidth >= 24,
+            "large-document thumbs stay large enough to drag (vertical=" + verticalTrack.Thumb.ActualHeight + ", horizontal=" + horizontalTrack.Thumb.ActualWidth + ")");
+        Check(vertical.Opacity == (scroll.IsMouseOver ? 1 : 0) && horizontal.Opacity == (scroll.IsMouseOver ? 1 : 0),
+            "scrollbars are hidden outside the scroll region and revealed within it");
+        double viewportWidth = scroll.ViewportWidth, viewportHeight = scroll.ViewportHeight;
+        try
+        {
+            Check(verticalTrack.Thumb.CaptureMouse(), "the scrollbar thumb can capture a drag");
+            Check(vertical.IsMouseCaptureWithin && vertical.Opacity == 1,
+                "capturing a thumb keeps its scrollbar visible outside the hover region");
+        }
+        finally { if (Mouse.Captured == verticalTrack.Thumb) verticalTrack.Thumb.ReleaseMouseCapture(); }
+        Pump();
+        Check(vertical.Opacity == (scroll.IsMouseOver ? 1 : 0) && scroll.ViewportWidth == viewportWidth && scroll.ViewportHeight == viewportHeight,
+            "releasing the scrollbar restores auto-hide without changing the content viewport");
+        double before = scroll.VerticalOffset;
+        Drag(verticalTrack.Thumb, 0, 35);
+        Check(scroll.VerticalOffset > before && editor.Text == body && editor.SelectionStart == 4 && editor.SelectionLength == 3,
+            "dragging the vertical thumb scrolls the editor without changing its selection");
+        before = scroll.HorizontalOffset;
+        Drag(horizontalTrack.Thumb, 45, 0);
+        Check(scroll.HorizontalOffset > before, "dragging the horizontal thumb scrolls wide content in the correct direction");
+        scroll.ScrollToHome(); Pump();
+        scroll.RaiseEvent(new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, -120) { RoutedEvent = Mouse.MouseWheelEvent }); Pump();
+        Check(scroll.VerticalOffset > 0, "mouse-wheel scrolling works with the custom viewer template");
+        scroll.ScrollToHome(); Pump();
+        ((RoutedCommand)verticalTrack.IncreaseRepeatButton.Command).Execute(null, verticalTrack.IncreaseRepeatButton); Pump();
+        Check(scroll.VerticalOffset > 0, "clicking the vertical track pages downward");
+        ((RoutedCommand)horizontalTrack.IncreaseRepeatButton.Command).Execute(null, horizontalTrack.IncreaseRepeatButton); Pump();
+        Check(scroll.HorizontalOffset > 0, "clicking the horizontal track pages right");
+        var theme = Element<Button>(window, "ThemeButton");
+        foreach (int mode in new[] { 1, 2 })
+        {
+            theme.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
+            ((MenuItem)theme.ContextMenu.Items[mode]).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            theme.ContextMenu.IsOpen = false; Pump();
+            var fill = (Border)verticalTrack.Thumb.Template.FindName("ThumbFill", verticalTrack.Thumb);
+            Check(((SolidColorBrush)fill.Background).Color == ((SolidColorBrush)window.FindResource("ScrollThumb")).Color,
+                "scrollbar thumb colors follow live theme changes: " + mode);
+            SaveElementPreview(Element<Grid>(window, "WindowRoot"), Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
+                "wpf-scrollbars-" + (mode == 1 ? "light" : "dark") + ".png"));
+        }
+        json.Content = "{}"; Pump();
+        Check(scroll.ComputedVerticalScrollBarVisibility == Visibility.Collapsed && scroll.ComputedHorizontalScrollBarVisibility == Visibility.Collapsed,
+            "unneeded custom scrollbars disappear when the document becomes small");
+        var tree = Element<TreeView>(window, "CollectionTree");
+        int count = tree.Items.Count;
+        try
+        {
+            for (int i = 0; i < 70; i++) tree.Items.Add(new TreeViewItem { Header = "滚动验证 " + i });
+            Pump();
+            var treeScroll = FindVisualChild<ScrollViewer>(tree);
+            var treeBar = (ScrollBar)treeScroll.Template.FindName("PART_VerticalScrollBar", treeScroll);
+            Check(treeBar.IsVisible && treeBar.ActualWidth == 12, "overflowing interface trees use the same custom scrollbar");
+            treeScroll.ScrollToEnd(); Pump();
+            double endOffset = treeScroll.VerticalOffset;
+            treeScroll.RaiseEvent(new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, 120) { RoutedEvent = Mouse.MouseWheelEvent }); Pump();
+            Check(endOffset > 0 && treeScroll.VerticalOffset < endOffset, "the interface tree still scrolls by mouse wheel");
+        }
+        finally { while (tree.Items.Count > count) tree.Items.RemoveAt(count); Pump(); }
+    }
+
+    private static T FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        if (parent is T) return (T)parent;
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var found = FindVisualChild<T>(VisualTreeHelper.GetChild(parent, i));
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private static void ChromeUi(StudioWindow window)
+    {
+        var chrome = WindowChrome.GetWindowChrome(window);
+        Check(window.WindowStyle == WindowStyle.None && !window.AllowsTransparency && chrome != null &&
+            chrome.CaptionHeight == 48 && chrome.ResizeBorderThickness.Left == 6 && !chrome.UseAeroCaptionButtons,
+            "the custom title bar keeps caption dragging and edge resizing without native caption buttons");
+        Check(Element<Border>(window, "TitleBar").ActualHeight == 48 &&
+            WindowChrome.GetIsHitTestVisibleInChrome((IInputElement)Element<Button>(window, "ThemeButton").Parent),
+            "the custom title bar has its own theme and window control area");
+        Check(HitTestWindow(window, new Point(350, 24)) == 2 && HitTestWindow(window, new Point(1, 200)) == 10,
+            "the custom frame reports a draggable title area and a resizable left edge");
+        var button = Element<Button>(window, "ThemeButton");
+        Check(HitTestWindow(window, button.TranslatePoint(new Point(button.ActualWidth / 2, button.ActualHeight / 2), window)) == 1,
+            "title-bar controls receive client clicks instead of starting a window drag");
+        Element<Button>(window, "MaximizeButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
+        Check(window.WindowState == WindowState.Maximized && Element<Button>(window, "MaximizeButton").ToolTip.ToString() == "还原" &&
+            Element<Border>(window, "WindowFrame").BorderThickness.Left == 0,
+            "the custom maximize button changes state, icon label and frame together");
+        Check(window.ActualHeight <= SystemParameters.WorkArea.Height + 1 && window.ActualWidth <= SystemParameters.WorkArea.Width + 1,
+            "maximizing the custom frame stays inside the monitor work area");
+        MinimizeRestoreUi(window);
+        Element<Button>(window, "MaximizeButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
+        Check(window.WindowState == WindowState.Normal && Element<Button>(window, "MaximizeButton").ToolTip.ToString() == "最大化",
+            "the custom restore button returns to the normal window");
+        Element<Button>(window, "MinimizeButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
+        Check(window.WindowState == WindowState.Minimized, "the custom minimize button minimizes the window");
+        window.WindowState = WindowState.Normal; Pump();
+    }
+
+    private static void MinimizeRestoreUi(StudioWindow window)
+    {
+        var source = (HwndSource)PresentationSource.FromVisual(window);
+        var theme = Element<Button>(window, "ThemeButton");
+        foreach (int mode in new[] { 1, 2 })
+        {
+            theme.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
+            ((MenuItem)theme.ContextMenu.Items[mode]).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            theme.ContextMenu.IsOpen = false; Pump();
+            Check(source.CompositionTarget.BackgroundColor == ((SolidColorBrush)window.Background).Color,
+                "the native render surface clear color matches the theme before a restore: " + mode);
+            foreach (WindowState state in new[] { WindowState.Maximized, WindowState.Normal })
+            {
+                window.WindowState = state; Pump();
+                var frame = Element<Border>(window, "WindowFrame");
+                var title = Element<Border>(window, "TitleBar");
+                var glyph = Element<System.Windows.Shapes.Path>(window, "MaximizeIcon").Data;
+                Thickness border = frame.BorderThickness;
+                CornerRadius corners = title.CornerRadius;
+                double width = Element<ColumnDefinition>(window, "SidebarColumn").Width.Value;
+                double height = Element<RowDefinition>(window, "RequestRow").Height.Value;
+                var editor = ((JsonEditor)Element<ContentControl>(window, "RequestHost").Content).TextBox;
+                string body = editor.Text;
+                editor.Select(2, 3);
+                for (int cycle = 0; cycle < 3; cycle++)
+                {
+                    Element<Button>(window, "MinimizeButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
+                    Check(window.WindowState == WindowState.Minimized && frame.BorderThickness == border && title.CornerRadius == corners &&
+                        object.ReferenceEquals(Element<System.Windows.Shapes.Path>(window, "MaximizeIcon").Data, glyph),
+                        "minimizing preserves the last visible frame instead of rebuilding it: " + state + "/" + mode + "/" + cycle);
+                    window.WindowState = state; Pump();
+                    Check(frame.BorderThickness == border && title.CornerRadius == corners &&
+                        object.ReferenceEquals(Element<System.Windows.Shapes.Path>(window, "MaximizeIcon").Data, glyph) &&
+                        Math.Abs(Element<ColumnDefinition>(window, "SidebarColumn").Width.Value - width) < .1 &&
+                        Math.Abs(Element<RowDefinition>(window, "RequestRow").Height.Value - height) < .1 &&
+                        source.CompositionTarget.BackgroundColor == ((SolidColorBrush)window.Background).Color &&
+                        editor.Text == body && editor.SelectionStart == 2 && editor.SelectionLength == 3,
+                        "restoring reuses the frame and retains theme, splitters and editor selection: " + state + "/" + mode + "/" + cycle);
+                }
+                editor.Select(0, 0);
+            }
+        }
+        window.WindowState = WindowState.Maximized; Pump();
+    }
+
+    private static void DialogUi(StudioWindow window, string output)
+    {
+        foreach (int mode in new[] { 1, 2 })
+        {
+            var theme = Element<Button>(window, "ThemeButton");
+            theme.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
+            ((MenuItem)theme.ContextMenu.Items[mode]).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            theme.ContextMenu.IsOpen = false; Pump();
+            SaveElementPreview(Element<Grid>(window, "WindowRoot"), Path.Combine(output, "wpf-workbench-" + (mode == 1 ? "light" : "dark") + ".png"));
+            RespondToDialog(window, delegate { Invoke(window, "Warn", "请求体不是有效的 JSON。\r\n请检查第 28 行的逗号，然后重试。", "JSON 格式错误"); }, delegate(StudioDialog dialog)
+            {
+                Check(Window.GetWindow(dialog) == window && PresentationSource.FromVisual(dialog) == PresentationSource.FromVisual(window),
+                    "warnings render inside the application's existing window surface");
+                Check(KeyboardNavigation.GetTabNavigation(dialog) == KeyboardNavigationMode.Cycle &&
+                    KeyboardNavigation.GetControlTabNavigation(dialog) == KeyboardNavigationMode.Cycle,
+                    "dialog keyboard navigation stays inside the modal card");
+                Check(Element<Button>(dialog, "DialogCancelButton").Visibility == Visibility.Collapsed &&
+                    Element<Button>(dialog, "DialogConfirmButton").Content.ToString() == "知道了" &&
+                    Element<TextBlock>(dialog, "DialogTitle").Text == "JSON 格式错误",
+                    "the warning dialog presents the title and a single acknowledgement action");
+                Check(((SolidColorBrush)dialog.FindResource("Surface")).Color.R == (mode == 1 ? 255 : 26),
+                    "custom dialogs follow the current application theme: " + mode);
+                if (mode == 1) DragDialogUi(window, dialog);
+                SaveElementPreview((FrameworkElement)dialog.Content, Path.Combine(output, "wpf-dialog-" + (mode == 1 ? "light" : "dark") + ".png"));
+                if (mode == 2) SaveElementPreview(Element<Grid>(window, "WindowRoot"), Path.Combine(output, "wpf-modal-overlay.png"));
+                if (mode == 1)
+                {
+                    bool clicked = false;
+                    var confirm = Element<Button>(dialog, "DialogConfirmButton");
+                    confirm.Focus();
+                    dialog.MoveFocus(new TraversalRequest(FocusNavigationDirection.Next));
+                    Check(dialog.IsKeyboardFocusWithin, "Tab from the last dialog button cycles within the modal card");
+                    confirm.Focus();
+                    confirm.Click += delegate { clicked = true; };
+                    AccessKeyManager.ProcessKey(PresentationSource.FromVisual(dialog), "\r", false);
+                    Check(clicked, "Enter activates the acknowledgement button inside an embedded dialog");
+                }
+                else dialog.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(dialog), Environment.TickCount, Key.Escape)
+                    { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+            });
+        }
+        var tree = Element<TreeView>(window, "CollectionTree");
+        ((TreeViewItem)tree.SelectedItem).IsSelected = false;
+        RespondToDialog(window, delegate { Invoke(window, "AddFolderClick", null, null); }, delegate(StudioDialog dialog)
+        {
+            var panel = (StackPanel)Element<ContentControl>(dialog, "DialogBody").Content;
+            TextBox input = null;
+            foreach (var child in panel.Children) if (child is TextBox) { input = (TextBox)child; break; }
+            Check(input != null && input.SelectedText == "新建文件夹", "name entry uses the shared custom dialog and selects the initial name");
+            input.Text = " ";
+            Check(!Element<Button>(dialog, "DialogConfirmButton").IsEnabled, "custom name dialogs reject blank names");
+            input.Text = "弹窗验证目录";
+            SaveElementPreview((FrameworkElement)dialog.Content, Path.Combine(output, "wpf-dialog-name.png"));
+            Element<Button>(dialog, "DialogConfirmButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        });
+        var added = (ApiItem)((TreeViewItem)tree.Items[1]).Tag;
+        Check(added.IsFolder && added.Name == "弹窗验证目录", "confirming the custom name dialog creates the requested folder");
+        RespondToDialog(window, delegate { Invoke(window, "DeleteItem", added); }, delegate(StudioDialog dialog)
+        {
+            Check(Element<Button>(dialog, "DialogCancelButton").IsDefault && !Element<Button>(dialog, "DialogConfirmButton").IsDefault &&
+                Element<Button>(dialog, "DialogConfirmButton").Content.ToString() == "删除",
+                "deletion confirmation defaults to Cancel and labels its destructive action explicitly");
+            SaveElementPreview((FrameworkElement)dialog.Content, Path.Combine(output, "wpf-dialog-delete.png"));
+            bool cancelled = false;
+            Element<Button>(dialog, "DialogCancelButton").Click += delegate { cancelled = true; };
+            AccessKeyManager.ProcessKey(PresentationSource.FromVisual(dialog), "\r", false);
+            Check(cancelled, "Enter in a deletion dialog cancels rather than deleting");
+        });
+        Check(tree.Items.Count == 2, "closing deletion confirmation preserves the folder");
+        RespondToDialog(window, delegate { Invoke(window, "DeleteItem", added); }, delegate(StudioDialog dialog)
+        {
+            Element<Button>(dialog, "DialogConfirmButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        });
+        Check(tree.Items.Count == 1, "confirming deletion in the custom dialog removes the folder");
+        RespondToDialog(window, delegate { Invoke(window, "Warn", "窗口关闭时先退出当前弹层。", "提示"); }, delegate(StudioDialog dialog)
+        {
+            window.Close();
+        });
+        Check(window.IsVisible, "closing the window during a modal card dismisses the card without closing the workspace");
+        StandaloneDialogUi();
+    }
+
+    private static void DragDialogUi(StudioWindow owner, StudioDialog dialog)
+    {
+        var root = Element<Grid>(owner, "WindowRoot");
+        var handle = Element<Thumb>(dialog, "DialogDragHandle");
+        Point before = dialog.TranslatePoint(new Point(), root);
+        Drag(handle, 75, 35);
+        Point after = dialog.TranslatePoint(new Point(), root);
+        Check(Math.Abs(after.X - before.X - 75) < .1 && Math.Abs(after.Y - before.Y - 35) < .1 &&
+            PresentationSource.FromVisual(dialog) == PresentationSource.FromVisual(owner),
+            "dragging a message header moves the card within the existing window surface");
+        Drag(handle, 100000, 100000);
+        after = dialog.TranslatePoint(new Point(), root);
+        Check(after.X + dialog.ActualWidth <= root.ActualWidth - 16 + .1 && after.Y + dialog.ActualHeight <= root.ActualHeight - 16 + .1,
+            "dragging a message keeps its right and bottom edges inside the workspace");
+        Drag(handle, -200000, -200000);
+        after = dialog.TranslatePoint(new Point(), root);
+        Check(after.X >= 16 - .1 && after.Y >= 16 - .1, "dragging a message keeps its top and left edges reachable");
+        var offset = (TranslateTransform)dialog.RenderTransform;
+        Drag(handle, -offset.X, -offset.Y);
+    }
+
+    private static void RespondToDialog(StudioWindow owner, Action show, Action<StudioDialog> respond)
+    {
+        owner.Activate(); Pump();
+        Exception failure = null;
+        bool observed = false;
+        int windows = Application.Current.Windows.Count, activationChanges = 0, enableChanges = 0;
+        var source = (HwndSource)PresentationSource.FromVisual(owner);
+        uint ownerProcess;
+        GetWindowThreadProcessId(source.Handle, out ownerProcess);
+        bool externalActivation = false;
+        HwndSourceHook hook = delegate(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            if (message == 0x6 || message == 0x86) activationChanges++; // WM_ACTIVATE / WM_NCACTIVATE
+            if (message == 0x6 && lParam != IntPtr.Zero)
+            {
+                uint otherProcess;
+                GetWindowThreadProcessId(lParam, out otherProcess);
+                if (otherProcess != 0 && otherProcess != ownerProcess) externalActivation = true;
+            }
+            if (message == 0xA) enableChanges++; // WM_ENABLE
+            return IntPtr.Zero;
+        };
+        source.AddHook(hook);
+        Dispatcher.CurrentDispatcher.BeginInvoke(new Action(delegate
+        {
+            var dialog = Element<ContentControl>(owner, "DialogHost").Content as StudioDialog;
+            try
+            {
+                Check(dialog != null && dialog.IsVisible && Element<Grid>(owner, "DialogShade").IsVisible, "custom modal dialogs dim their owner");
+                Check(Application.Current.Windows.Count == windows && IsWindowEnabled(source.Handle),
+                    "opening a dialog creates no top-level window and does not disable the native owner");
+                Check(!Element<Grid>(owner, "WorkspaceGrid").IsHitTestVisible && !Element<Border>(owner, "TitleBar").IsHitTestVisible,
+                    "the modal card blocks interaction with the workspace and title bar");
+                observed = true;
+                respond(dialog);
+            }
+            catch (Exception ex) { failure = ex; }
+            finally
+            {
+                if (dialog != null && dialog.IsVisible)
+                    Element<Button>(dialog, "DialogCloseButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            }
+        }), DispatcherPriority.ApplicationIdle);
+        try { show(); Pump(); }
+        finally { source.RemoveHook(hook); }
+        if (failure != null) throw failure;
+        Check(observed && !Element<Grid>(owner, "DialogShade").IsVisible && Element<ContentControl>(owner, "DialogHost").Content == null &&
+            Element<Grid>(owner, "WorkspaceGrid").IsHitTestVisible && Element<Border>(owner, "TitleBar").IsHitTestVisible,
+            "closing the dialog clears the card and restores workspace interaction");
+        Check(Application.Current.Windows.Count == windows && (activationChanges == 0 || externalActivation) && enableChanges == 0,
+            "dialogs avoid native window transitions, excluding focus changes to other applications (activation=" + activationChanges + ", enable=" + enableChanges + ")");
+    }
+
+    private static void StandaloneDialogUi()
+    {
+        var dialog = (StudioDialog)typeof(StudioDialog).GetMethod("CreateMessage", BindingFlags.NonPublic | BindingFlags.Static)
+            .Invoke(null, new object[] { null, "没有主窗口时仍然可以显示异常信息。", "程序异常", false });
+        bool shown = false;
+        Exception failure = null;
+        Dispatcher.CurrentDispatcher.BeginInvoke(new Action(delegate
+        {
+            try
+            {
+                var host = Window.GetWindow(dialog);
+                Check(host != null && host.IsVisible && host.WindowStyle == WindowStyle.None && host.Content == dialog,
+                    "startup errors without a visible workspace retain a standalone custom dialog");
+                var close = Element<Button>(dialog, "DialogCloseButton");
+                Check(HitTestWindow(host, close.TranslatePoint(new Point(close.ActualWidth / 2, close.ActualHeight / 2), host)) == 1,
+                    "the standalone dialog's close button receives clicks in its custom caption");
+                double left = host.Left, top = host.Top;
+                Drag(Element<Thumb>(dialog, "DialogDragHandle"), 25, 20);
+                Check(Math.Abs(host.Left - left - 25) <= 1 && Math.Abs(host.Top - top - 20) <= 1,
+                    "the standalone message header also supports dragging");
+                shown = true;
+            }
+            catch (Exception ex) { failure = ex; }
+            finally { Element<Button>(dialog, "DialogConfirmButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); }
+        }), DispatcherPriority.ApplicationIdle);
+        bool accepted = (bool)typeof(StudioDialog).GetMethod("ShowModal", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(dialog, null);
+        if (failure != null) throw failure;
+        Check(shown && accepted && Window.GetWindow(dialog) == null, "standalone confirmation returns its result and releases the host window");
+    }
+
+    [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern bool IsWindowEnabled(IntPtr hwnd);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+    private static int HitTestWindow(Window window, Point point)
+    {
+        Point screen = window.PointToScreen(point);
+        int coordinates = ((int)screen.X & 0xffff) | (((int)screen.Y & 0xffff) << 16);
+        return SendMessage(new WindowInteropHelper(window).Handle, 0x84, IntPtr.Zero, new IntPtr(coordinates)).ToInt32();
+    }
+
+    private static void EditorDeletionUi(JsonEditor json)
+    {
+        var editor = json.TextBox;
+        foreach (string newline in new[] { "\r\n", "\n" })
+        {
+            string body = "{" + newline + string.Join(newline, Array.ConvertAll(new int[80], x => "  \"use_area\": \"\",,,,,,,,,,")) + newline + "}";
+            json.Content = body; Pump();
+            editor.ScrollToEnd(); Pump();
+            for (int i = 0; i < 10; i++)
+            {
+                int comma = editor.Text.LastIndexOf(',');
+                editor.Select(comma, 1); editor.SelectedText = "";
+                Pump();
+            }
+            Check(editor.Text.Length == body.Length - 10 && HasVisibleCharacter(json, editor.Text.Length - 1),
+                "deleting trailing commas at the bottom keeps the editor rendering: " + newline.Length);
+            int start = editor.Text.IndexOf(newline);
+            editor.Select(start, editor.Text.LastIndexOf(newline) - start);
+            editor.SelectedText = ""; Pump();
+            Check(editor.LineCount == 2 && HasVisibleCharacter(json, 0),
+                "deleting many scrolled lines clamps rendering to the remaining lines: " + newline.Length);
+            editor.Undo(); Pump(); editor.Redo(); Pump();
+            Check(editor.LineCount == 2 && HasVisibleCharacter(json, editor.Text.Length - 1),
+                "undo and redo after deleting scrolled lines keep text visible");
+            editor.SelectAll(); editor.SelectedText = ""; Pump();
+            Check(editor.Text == "" && editor.LineCount == 1, "deleting the entire document renders the empty first line");
+        }
+    }
+
+    private static void ContinuousRenderingUi(JsonEditor json)
+    {
+        json.Content = "{\r\n  \"value\": \"\"\r\n}"; Pump();
+        var editor = json.TextBox;
+        editor.Select(editor.Text.IndexOf("\"\"", StringComparison.Ordinal) + 1, 0);
+        for (int i = 0; i < 12; i++)
+        {
+            string input = i % 3 == 2 ? "\r\n字" : "字";
+            int caret = editor.CaretIndex;
+            editor.SelectedText = input;
+            editor.Select(caret + input.Length, 0);
+            Pump();
+            var frame = new RenderTargetBitmap((int)Math.Ceiling(json.ActualWidth), (int)Math.Ceiling(json.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+            frame.Render(json);
+            Check(ContainsColor(frame, Color.FromRgb(142,181,255)) && ContainsColor(frame, Color.FromRgb(116,215,189)) &&
+                HasVisibleCharacter(json, editor.CaretIndex - 1), "continuous input keeps syntax colors and the newest character visible: " + i);
+            var gutter = new CroppedBitmap(frame, new Int32Rect(0, 0, 48, frame.PixelHeight));
+            Check(editor.LineCount == 3 + (i + 1) / 3 && ContainsColor(gutter, Color.FromRgb(151,166,187), Color.FromRgb(22,30,42)),
+                "continuous input keeps line numbers visible: " + i);
+        }
+        var composition = new TextComposition(InputManager.Current, editor, "");
+        editor.RaiseEvent(new TextCompositionEventArgs(Keyboard.PrimaryDevice, composition) { RoutedEvent = TextCompositionManager.PreviewTextInputStartEvent });
+        Pump();
+        Check(((SolidColorBrush)editor.Foreground).Color.A == 255 && HasVisibleCharacter(json, editor.CaretIndex - 1),
+            "IME composition keeps native text visible");
+        EnterText(editor, "中文"); Pump();
+        var committed = new RenderTargetBitmap((int)Math.Ceiling(json.ActualWidth), (int)Math.Ceiling(json.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+        committed.Render(json);
+        Check(ContainsColor(committed, Color.FromRgb(116,215,189)) && HasVisibleCharacter(json, editor.CaretIndex - 1),
+            "committing IME text restores syntax coloring without hiding the input");
+    }
+
+    private static void PairedSymbolsUi(JsonEditor json)
+    {
+        var editor = json.TextBox;
+        foreach (string pair in new[] { "{}", "[]", "()", "\"\"", "''" })
+        {
+            json.Content = ""; Pump();
+            EnterText(editor, pair.Substring(0, 1)); Pump();
+            Check(editor.Text == pair && editor.CaretIndex == 1 && editor.SelectionLength == 0,
+                "typing an opening symbol inserts its pair with the caret between: " + pair);
+            EnterText(editor, pair.Substring(1)); Pump();
+            Check(editor.Text == pair && editor.CaretIndex == 2, "typing the existing closing symbol advances the caret: " + pair);
+            editor.Undo(); Pump();
+            Check(editor.Text == "", "an automatically inserted pair undoes in one step: " + pair);
+            editor.Redo(); Pump();
+            Check(editor.Text == pair, "redo restores both symbols: " + pair);
+        }
+        json.Content = "value"; Pump(); editor.SelectAll();
+        EnterText(editor, "{"); Pump();
+        Check(editor.Text == "{value}" && editor.SelectedText == "value", "opening symbols wrap the selected text");
+        editor.Undo(); Pump();
+        Check(editor.Text == "value", "wrapping selected text undoes in one step");
+        json.Content = ""; Pump();
+        foreach (string input in new[] { "{", "[", "\"", "值", "\"", "]", "}" }) EnterText(editor, input);
+        Pump();
+        Check(editor.Text == "{[\"值\"]}" && editor.CaretIndex == editor.Text.Length,
+            "nested pairs accept text inside and skip their existing closing symbols");
+        json.Content = "\"ab\""; Pump(); editor.Select(2, 0);
+        EnterText(editor, "{"); Pump();
+        Check(editor.Text == "\"a{b\"", "brackets typed inside a string remain literal characters");
+        json.Content = "\"a\\\""; Pump(); editor.Select(3, 0);
+        EnterText(editor, "\""); Pump();
+        Check(editor.Text == "\"a\\\"\"" && editor.CaretIndex == 4, "an escaped quote is inserted instead of skipping a closing quote");
+        json.Content = ""; Pump(); EnterText(editor, "中文"); Pump();
+        Check(editor.Text == "中文", "multi-character input keeps native text insertion");
+        json.Content = ""; Pump(); editor.IsReadOnly = true;
+        try { EnterText(editor, "{"); Pump(); Check(editor.Text == "", "read-only editors do not insert paired symbols"); }
+        finally { editor.IsReadOnly = false; }
+    }
+
+    private static void AutoIndentUi(JsonEditor json)
+    {
+        var editor = json.TextBox;
+        foreach (string pair in new[] { "{}", "[]", "()" })
+        {
+            json.Content = ""; Pump(); EnterText(editor, pair.Substring(0, 1));
+            PressEnter(editor); Pump();
+            string expanded = pair[0] + "\r\n  \r\n" + pair[1];
+            Check(editor.Text == expanded && editor.CaretIndex == 5 && editor.SelectionLength == 0 && editor.LineCount == 3,
+                "Enter between paired brackets adds an indented caret line and a closing line: " + pair);
+            EnterText(editor, "值"); Pump();
+            Check(editor.Text == pair[0] + "\r\n  值\r\n" + pair[1] && HasVisibleCharacter(json, editor.CaretIndex - 1),
+                "typing after auto-indent inserts text on the middle line: " + pair);
+            editor.Undo(); Pump(); editor.Undo(); Pump();
+            Check(editor.Text == pair && editor.CaretIndex == 1, "auto-indent undoes in one step: " + pair);
+            editor.Redo(); Pump();
+            Check(editor.Text == expanded && editor.CaretIndex == 5, "redo restores the indentation and caret: " + pair);
+        }
+        foreach (string newline in new[] { "\r\n", "\n" })
+        {
+            string prefix = "{" + newline + "  \"items\": ";
+            json.Content = prefix + "{}" + newline + "}"; Pump(); editor.Select(prefix.Length + 1, 0);
+            PressEnter(editor); Pump();
+            Check(editor.Text == prefix + "{" + newline + "    " + newline + "  }" + newline + "}" &&
+                editor.CaretIndex == prefix.Length + 1 + newline.Length + 4,
+                "nested objects inherit indentation and preserve the document's line endings: " + newline.Length);
+        }
+        json.Content = "\t{  }"; Pump(); editor.Select(3, 0); PressEnter(editor); Pump();
+        Check(editor.Text == "\t{\r\n\t\t\r\n\t}" && editor.CaretIndex == 6,
+            "spaced bracket pairs expand using the existing tab indentation");
+        json.Content = "  \"a\": 1,"; Pump(); editor.Select(editor.Text.Length, 0); PressEnter(editor); Pump();
+        Check(editor.Text == "  \"a\": 1,\r\n  " && editor.CaretIndex == editor.Text.Length,
+            "ordinary Enter carries the current line indentation forward");
+        json.Content = "  {"; Pump(); editor.Select(editor.Text.Length, 0); PressEnter(editor); Pump();
+        Check(editor.Text == "  {\r\n    ", "Enter after an opening bracket indents one additional level");
+        json.Content = "\"{}\""; Pump(); editor.Select(2, 0); PressEnter(editor); Pump();
+        Check(editor.Text == "\"{\r\n}\"", "brackets inside a string do not create an extra closing line");
+        json.Content = "{remove}"; Pump(); editor.Select(1, 6); PressEnter(editor); Pump();
+        Check(editor.Text == "{\r\n  \r\n}" && editor.CaretIndex == 5,
+            "Enter replaces the selection while expanding its surrounding brackets");
+        editor.Undo(); Pump();
+        Check(editor.Text == "{remove}" && editor.SelectedText == "remove", "undo restores the text replaced by auto-indent");
+        json.Content = "{}"; Pump(); editor.Select(1, 0); editor.IsReadOnly = true;
+        try { PressEnter(editor); Pump(); Check(editor.Text == "{}", "auto-indent leaves read-only editors unchanged"); }
+        finally { editor.IsReadOnly = false; }
+    }
+
+    private static void TabIndentUi(JsonEditor json)
+    {
+        var editor = json.TextBox;
+        json.Content = "abcd"; Pump(); editor.Select(2, 0);
+        EditingCommands.TabForward.Execute(null, editor); Pump();
+        Check(editor.Text == "ab  cd" && editor.CaretIndex == 4 && editor.SelectionLength == 0,
+            "Tab inserts two spaces at the caret without replacing surrounding text");
+        editor.Undo(); Pump();
+        Check(editor.Text == "abcd" && editor.CaretIndex == 2, "a Tab insertion undoes in one step");
+        json.Content = ""; Pump(); EditingCommands.TabForward.Execute(null, editor); Pump();
+        Check(editor.Text == "  " && editor.CaretIndex == 2, "Tab indents an empty document by two spaces");
+
+        foreach (string newline in new[] { "\r\n", "\n", "\r" })
+        {
+            string original = "alpha" + newline + "  beta" + newline + newline + "gamma";
+            string indented = "  alpha" + newline + "    beta" + newline + "  " + newline + "  gamma";
+            json.Content = original; Pump(); editor.SelectAll();
+            EditingCommands.TabForward.Execute(null, editor); Pump();
+            Check(editor.Text == indented && editor.SelectionStart == 0 && editor.SelectionLength == indented.Length,
+                "Tab indents all selected lines including blank lines and preserves line endings: " + newline.Length + (int)newline[0]);
+            editor.Undo(); Pump();
+            Check(editor.Text == original && editor.SelectedText == original, "block indentation undoes as one edit with the selection restored");
+            editor.Redo(); Pump();
+            Check(editor.Text == indented && editor.SelectedText == indented, "redo restores all indented lines and their selection");
+            EditingCommands.TabBackward.Execute(null, editor); Pump();
+            Check(editor.Text == original && editor.SelectedText == original, "Shift+Tab unindents the entire selected block by two spaces");
+            editor.Undo(); Pump(); editor.Redo(); Pump();
+            Check(editor.Text == original && editor.SelectedText == original, "block unindentation supports one-step undo and redo");
+
+            json.Content = "a" + newline + "b" + newline + "c"; Pump(); editor.Select(0, 1 + newline.Length);
+            EditingCommands.TabForward.Execute(null, editor); Pump();
+            Check(editor.Text == "  a" + newline + "b" + newline + "c" && editor.SelectedText == "  a" + newline,
+                "a selection ending at the next line's start does not indent that next line");
+            json.Content = "abcd" + newline + "efgh" + newline + "tail"; Pump();
+            int end = editor.Text.IndexOf("gh", StringComparison.Ordinal) + 1;
+            editor.Select(1, end - 1);
+            EditingCommands.TabForward.Execute(null, editor); Pump();
+            Check(editor.Text == "  abcd" + newline + "  efgh" + newline + "tail" && editor.SelectionStart == 3 &&
+                editor.SelectedText == "bcd" + newline + "  efg", "partial multi-line selections stay attached to the same text after indentation");
+            EditingCommands.TabBackward.Execute(null, editor); Pump();
+            Check(editor.Text == "abcd" + newline + "efgh" + newline + "tail" && editor.SelectionStart == 1 && editor.SelectionLength == end - 1,
+                "unindenting a partial multi-line selection restores its original bounds");
+        }
+        json.Content = "abcd"; Pump(); editor.Select(1, 2);
+        EditingCommands.TabForward.Execute(null, editor); Pump();
+        Check(editor.Text == "  abcd" && editor.SelectedText == "bc", "Tab indents a selected single line and retains its selected text");
+        json.Content = "    value"; Pump(); editor.Select(6, 0);
+        EditingCommands.TabBackward.Execute(null, editor); Pump();
+        Check(editor.Text == "  value" && editor.CaretIndex == 4 && editor.SelectionLength == 0,
+            "Shift+Tab removes one leading indent and keeps the caret on the same character");
+        json.Content = " value\n  value\n\tvalue\nvalue"; Pump(); editor.SelectAll();
+        EditingCommands.TabBackward.Execute(null, editor); Pump();
+        Check(editor.Text == "value\nvalue\nvalue\nvalue" && editor.SelectedText == editor.Text,
+            "Shift+Tab removes short indents and legacy tabs without deleting content");
+        json.Content = " value"; Pump(); editor.Select(0, 0);
+        EditingCommands.TabBackward.Execute(null, editor); Pump();
+        Check(editor.Text == "value" && editor.CaretIndex == 0, "unindenting at column zero keeps the caret in bounds");
+        json.Content = "value"; Pump(); editor.Select(2, 0);
+        EditingCommands.TabBackward.Execute(null, editor); Pump();
+        Check(editor.Text == "value" && editor.CaretIndex == 2 && !editor.CanUndo,
+            "Shift+Tab on an unindented line does not change text or add an undo step");
+        json.Content = "a\r\n"; Pump(); editor.SelectAll();
+        EditingCommands.TabForward.Execute(null, editor); Pump();
+        Check(editor.Text == "  a\r\n", "block indentation does not include an unselected trailing empty line");
+        json.Content = "a\nb"; Pump(); editor.SelectAll();
+        EditingCommands.TabForward.Execute(null, editor); EditingCommands.TabForward.Execute(null, editor); Pump();
+        Check(editor.Text == "    a\n    b" && editor.SelectedText == editor.Text, "repeated Tab presses retain the block selection and add two spaces each time");
+        EditingCommands.TabBackward.Execute(null, editor); EditingCommands.TabBackward.Execute(null, editor); Pump();
+        Check(editor.Text == "a\nb" && editor.SelectedText == editor.Text, "repeated Shift+Tab presses return the selected block to its original indentation");
+        json.Content = "  value"; Pump(); editor.SelectAll(); editor.IsReadOnly = true;
+        try
+        {
+            Check(!EditingCommands.TabForward.CanExecute(null, editor) && !EditingCommands.TabBackward.CanExecute(null, editor),
+                "Tab indentation commands are disabled in read-only editors");
+        }
+        finally { editor.IsReadOnly = false; }
+    }
+
+    private static void PressEnter(TextBox editor)
+    {
+        var key = new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(editor), Environment.TickCount, Key.Return)
+            { RoutedEvent = Keyboard.PreviewKeyDownEvent };
+        editor.RaiseEvent(key);
+        if (!key.Handled) EditingCommands.EnterParagraphBreak.Execute(null, editor);
+    }
+
+    private static void EnterText(TextBox editor, string text)
+    {
+        var composition = new TextComposition(InputManager.Current, editor, text);
+        var preview = new TextCompositionEventArgs(Keyboard.PrimaryDevice, composition) { RoutedEvent = TextCompositionManager.PreviewTextInputEvent };
+        editor.RaiseEvent(preview);
+        if (!preview.Handled)
+            editor.RaiseEvent(new TextCompositionEventArgs(Keyboard.PrimaryDevice, composition) { RoutedEvent = TextCompositionManager.TextInputEvent });
+    }
+
     private static void SymbolInputUi(StudioWindow window, JsonEditor json)
     {
         var editor = json.TextBox;
@@ -240,7 +852,7 @@ internal static class WpfSmokeTests
             editor.SelectedText = symbols[index].ToString();
             Pump();
             Check(editor.Text == symbols.Substring(0, index + 1) && HasVisibleCharacter(json, index),
-                "typed symbol remains visible before delayed highlighting: " + symbols[index]);
+                "typed symbol remains visible with live highlighting: " + symbols[index]);
         }
         PumpFor(TimeSpan.FromMilliseconds(250));
         Check(editor.Text == symbols && HasVisibleCharacter(json, symbols.Length - 1),
@@ -547,24 +1159,30 @@ internal static class WpfSmokeTests
 
     private static void SavePreview(StudioWindow window, string output)
     {
-        var root = Element<Grid>(window, "WorkspaceGrid");
+        SaveElementPreview(Element<Grid>(window, "WindowRoot"), Path.Combine(output, "wpf-workbench.png"));
+    }
+    private static void SaveElementPreview(FrameworkElement root, string path)
+    {
+        root.UpdateLayout();
         int width = (int)Math.Ceiling(root.ActualWidth), height = (int)Math.Ceiling(root.ActualHeight);
         var frame = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
         frame.Render(root);
         var encoder = new PngBitmapEncoder();
         encoder.Frames.Add(BitmapFrame.Create(frame));
-        using (var stream = File.Create(Path.Combine(output, "wpf-workbench.png"))) encoder.Save(stream);
+        using (var stream = File.Create(path)) encoder.Save(stream);
     }
 
     private static void Drag(GridSplitter splitter, double dx, double dy)
+    { Drag((Thumb)splitter, dx, dy); }
+    private static void Drag(Thumb thumb, double dx, double dy)
     {
-        splitter.RaiseEvent(new DragStartedEventArgs(0, 0) { RoutedEvent = Thumb.DragStartedEvent });
-        splitter.RaiseEvent(new DragDeltaEventArgs(dx, dy) { RoutedEvent = Thumb.DragDeltaEvent });
-        splitter.RaiseEvent(new DragCompletedEventArgs(dx, dy, false) { RoutedEvent = Thumb.DragCompletedEvent });
+        thumb.RaiseEvent(new DragStartedEventArgs(0, 0) { RoutedEvent = Thumb.DragStartedEvent });
+        thumb.RaiseEvent(new DragDeltaEventArgs(dx, dy) { RoutedEvent = Thumb.DragDeltaEvent });
+        thumb.RaiseEvent(new DragCompletedEventArgs(dx, dy, false) { RoutedEvent = Thumb.DragCompletedEvent });
         Pump();
     }
 
-    private static T Element<T>(StudioWindow window, string name) where T : class { return (T)window.FindName(name); }
+    private static T Element<T>(FrameworkElement element, string name) where T : class { return (T)element.FindName(name); }
     private static object Invoke(StudioWindow window, string name, params object[] args)
     { return typeof(StudioWindow).GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic).Invoke(window, args); }
     private static void Pump() { Dispatcher.CurrentDispatcher.Invoke(new Action(delegate { }), DispatcherPriority.ApplicationIdle); }

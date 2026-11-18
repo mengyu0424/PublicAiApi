@@ -1,4 +1,5 @@
 using System;
+using System.Windows;
 using System.Windows.Media;
 using Microsoft.Win32;
 
@@ -15,6 +16,21 @@ namespace ApiStudio
             IsDark = mode == AppThemeMode.Dark || mode == AppThemeMode.System && systemThemeReader();
         }
         public static void RefreshSystemTheme() { if (Mode == AppThemeMode.System) IsDark = systemThemeReader(); }
+        internal static void ApplyResources(ResourceDictionary resources)
+        {
+            string[] names = { "Canvas", "Surface", "Subtle", "Border", "Ink", "Muted", "Hover", "Active", "Accent", "Error", "Grip",
+                "Rail", "RailSurface", "RailStroke", "RailHover", "RailSelected", "RailText", "RailMuted",
+                "ScrollThumb", "ScrollThumbHover", "ScrollTrack" };
+            Color[] colors = { Canvas, Surface, Subtle, Border, Ink, Muted, Hover, Active, Accent, Error, Grip,
+                Rail, RailSurface, RailStroke, RailHover, RailSelected, RailText, RailMuted,
+                ScrollThumb, ScrollThumbHover, ScrollTrack };
+            for (int i = 0; i < names.Length; i++)
+            {
+                var brush = new SolidColorBrush(colors[i]);
+                brush.Freeze();
+                resources[names[i]] = brush;
+            }
+        }
         private static bool ReadSystemDarkMode()
         {
             try
@@ -36,6 +52,16 @@ namespace ApiStudio
         public static Color Hover { get { return IsDark ? Rgb(29, 58, 61) : Rgb(232, 247, 243); } }
         public static Color Active { get { return IsDark ? Rgb(26, 65, 61) : Rgb(230, 246, 242); } }
         public static Color Grip { get { return IsDark ? Rgb(64, 81, 102) : Rgb(204, 214, 225); } }
+        public static Color ScrollThumb { get { return IsDark ? Rgb(76, 91, 111) : Rgb(182, 193, 207); } }
+        public static Color ScrollThumbHover { get { return IsDark ? Rgb(106, 123, 145) : Rgb(143, 158, 178); } }
+        public static Color ScrollTrack { get { return IsDark ? Rgb(32, 43, 59) : Rgb(238, 242, 246); } }
+        public static Color Rail { get { return IsDark ? Rgb(24, 34, 51) : Rgb(248, 250, 252); } }
+        public static Color RailSurface { get { return IsDark ? Rgb(34, 48, 67) : Colors.White; } }
+        public static Color RailStroke { get { return IsDark ? Rgb(53, 70, 92) : Rgb(221, 228, 237); } }
+        public static Color RailHover { get { return IsDark ? Rgb(38, 55, 77) : Rgb(237, 243, 248); } }
+        public static Color RailSelected { get { return IsDark ? Rgb(41, 68, 87) : Rgb(226, 243, 239); } }
+        public static Color RailText { get { return IsDark ? Rgb(220, 230, 242) : Ink; } }
+        public static Color RailMuted { get { return IsDark ? Rgb(165, 181, 202) : Rgb(100, 116, 139); } }
         public static Color JsonKey { get { return IsDark ? Rgb(142, 181, 255) : Rgb(68, 104, 177); } }
         public static Color JsonString { get { return IsDark ? Rgb(116, 215, 189) : Rgb(0, 141, 111); } }
         public static Color JsonNumber { get { return IsDark ? Rgb(240, 184, 107) : Rgb(173, 105, 38); } }

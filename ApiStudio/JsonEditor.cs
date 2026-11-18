@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -15,7 +17,6 @@ namespace ApiStudio
     public sealed class JsonEditor : Grid
     {
         private readonly JsonTextLayer textLayer, gutter;
-        private readonly DispatcherTimer highlightTimer;
         private List<JsonToken> tokens = new List<JsonToken>();
         private string highlightedText;
         private bool composing, syntaxVisible, renderUpdatePending;
@@ -69,6 +70,7 @@ namespace ApiStudio
             // Avoid inheriting the single-line input template used elsewhere.
             var host = new FrameworkElementFactory(typeof(ScrollViewer), "PART_ContentHost");
             host.SetValue(ScrollViewer.FocusableProperty, false);
+            host.SetResourceReference(FrameworkElement.StyleProperty, "StudioScrollViewer");
             TextBox.Template = new ControlTemplate(typeof(TextBox)) { VisualTree = host };
             TextBox.SetResourceReference(TextBoxBase.CaretBrushProperty, "Ink");
             TextBox.SetResourceReference(TextBoxBase.SelectionBrushProperty, "Accent");
@@ -77,21 +79,12 @@ namespace ApiStudio
             Children.Add(gutter);
             textLayer = new JsonTextLayer(this, false);
             SetColumn(textLayer, 1); Children.Add(textLayer);
-            highlightTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
-                { Interval = TimeSpan.FromMilliseconds(180) };
-            highlightTimer.Tick += delegate { Highlight(); };
-            TextBox.TextChanged += delegate
-            {
-                highlightedText = null;
-                RefreshTextRendering();
-                highlightTimer.Stop();
-                if (TextBox.Text.Length <= 200000 && IsLoaded) highlightTimer.Start();
-                Redraw();
-            };
+            // Keep the syntax snapshot current during typing. Switching to native
+            // monochrome text until a debounce timer fires causes visible flashing.
+            TextBox.TextChanged += delegate { Highlight(); };
             TextBox.AddHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler(delegate { Redraw(); }));
             TextBox.SizeChanged += delegate { Redraw(); };
             Loaded += delegate { Highlight(); };
-            Unloaded += delegate { highlightTimer.Stop(); };
             TextCompositionManager.AddPreviewTextInputStartHandler(TextBox, delegate { SetComposing(true); });
             TextCompositionManager.AddPreviewTextInputHandler(TextBox, delegate
             {
@@ -121,17 +114,14 @@ namespace ApiStudio
         }
         private void RefreshTextRendering()
         {
-            // TextChanged runs before TextBox has laid out the new characters.
-            // Keep native text visible until both syntax and layout are ready;
-            // restarting the highlight timer must never make typed text disappear.
-            bool ready = !composing && highlightedText == TextBox.Text && TextBox.Text.Length <= 200000;
-            syntaxVisible = ready && TextBox.IsArrangeValid;
+            // Layout can lag behind TextChanged. The overlay retains its last
+            // complete drawing until the new layout is ready instead of blinking.
+            syntaxVisible = !composing && highlightedText == TextBox.Text && TextBox.Text.Length <= 200000;
             Brush foreground = syntaxVisible ? Brushes.Transparent : Frozen(Theme.Ink);
             var current = TextBox.Foreground as SolidColorBrush;
             if (current == null || current.Color != ((SolidColorBrush)foreground).Color) TextBox.Foreground = foreground;
             current = TextBox.SelectionTextBrush as SolidColorBrush;
             if (current == null || current.Color != ((SolidColorBrush)foreground).Color) TextBox.SelectionTextBrush = foreground;
-            if (ready && !syntaxVisible) QueueRenderUpdate();
         }
         private void QueueRenderUpdate()
         {
@@ -157,7 +147,6 @@ namespace ApiStudio
         }
         public void Highlight()
         {
-            highlightTimer.Stop();
             string text = TextBox.Text;
             tokens = text.Length <= 200000 ? (useJsonSyntax ? JsonSyntax.Scan(text) : XmlSyntax.Scan(text)) : new List<JsonToken>();
             highlightedText = text;
@@ -189,17 +178,24 @@ namespace ApiStudio
                 new Typeface(TextBox.FontFamily, TextBox.FontStyle, TextBox.FontWeight, TextBox.FontStretch),
                 TextBox.FontSize, brush, null, TextFormattingMode.Display, VisualTreeHelper.GetDpi(this).PixelsPerDip);
         }
-        private void Draw(DrawingContext drawing, bool numbers, Size size)
+        private bool Draw(DrawingContext drawing, bool numbers, Size size)
         {
             var editor = TextBox;
-            if (!editor.IsVisible) return;
-            if (!editor.IsArrangeValid) { QueueRenderUpdate(); return; }
+            if (!editor.IsVisible) return true;
+            // LineCount validates the text view. Read it before the visible range:
+            // scroll metrics may still describe the document before an edit.
+            int lineCount = editor.LineCount;
+            if (lineCount <= 0 || !editor.IsArrangeValid) { QueueRenderUpdate(); return false; }
             int first = editor.GetFirstVisibleLineIndex(), last = editor.GetLastVisibleLineIndex();
-            if (first < 0 || last < first) return;
+            last = Math.Min(last, editor.LineCount - 1);
+            if (first < 0 || last < 0) { QueueRenderUpdate(); return false; }
+            first = Math.Min(first, last);
             string text = editor.Text;
             var scroll = editor.Template.FindName("PART_ContentHost", editor) as ScrollViewer;
-            double width = editor.ActualWidth - (scroll != null && scroll.ComputedVerticalScrollBarVisibility == Visibility.Visible ? SystemParameters.VerticalScrollBarWidth : 0);
-            double height = editor.ActualHeight - (scroll != null && scroll.ComputedHorizontalScrollBarVisibility == Visibility.Visible ? SystemParameters.HorizontalScrollBarHeight : 0);
+            var vertical = scroll == null ? null : scroll.Template.FindName("PART_VerticalScrollBar", scroll) as ScrollBar;
+            var horizontal = scroll == null ? null : scroll.Template.FindName("PART_HorizontalScrollBar", scroll) as ScrollBar;
+            double width = editor.ActualWidth - (vertical != null && vertical.IsVisible ? vertical.ActualWidth : 0);
+            double height = editor.ActualHeight - (horizontal != null && horizontal.IsVisible ? horizontal.ActualHeight : 0);
             drawing.PushClip(new RectangleGeometry(new Rect(0, 0, numbers ? size.Width : Math.Max(0, width), Math.Max(0, height))));
             for (int line = first; line <= last; line++)
             {
@@ -246,22 +242,234 @@ namespace ApiStudio
                 }
             }
             drawing.Pop();
+            return true;
         }
         private sealed class JsonTextLayer : FrameworkElement
         {
             private readonly JsonEditor owner;
             private readonly bool numbers;
+            private DrawingGroup lastDrawing;
             public JsonTextLayer(JsonEditor editor, bool isGutter) { owner = editor; numbers = isGutter; IsHitTestVisible = false; }
             protected override void OnRender(DrawingContext drawing)
             {
-                if (numbers) drawing.DrawRectangle(Frozen(Theme.Subtle), null, new Rect(RenderSize));
-                owner.Draw(drawing, numbers, RenderSize);
+                // IME composition and oversized documents use native text.
+                if (!numbers && !owner.syntaxVisible) { lastDrawing = null; return; }
+                var next = new DrawingGroup();
+                bool complete;
+                using (var context = next.Open())
+                {
+                    if (numbers) context.DrawRectangle(Frozen(Theme.Subtle), null, new Rect(RenderSize));
+                    complete = owner.Draw(context, numbers, RenderSize);
+                }
+                if (complete || lastDrawing == null) lastDrawing = next;
+                drawing.DrawDrawing(lastDrawing);
             }
         }
     }
     internal sealed class JsonTextBox : TextBox
     {
         internal bool SelectJsonValues = true;
+        public JsonTextBox()
+        {
+            BindIndentCommand(EditingCommands.TabForward, false);
+            BindIndentCommand(EditingCommands.TabBackward, true);
+        }
+        private void BindIndentCommand(RoutedCommand command, bool outdent)
+        {
+            CommandBindings.Add(new CommandBinding(command, delegate(object sender, ExecutedRoutedEventArgs e)
+            {
+                AdjustIndent(outdent);
+                e.Handled = true;
+            }, delegate(object sender, CanExecuteRoutedEventArgs e)
+            {
+                e.CanExecute = !IsReadOnly && AcceptsTab;
+                e.Handled = true;
+            }));
+        }
+        private void AdjustIndent(bool outdent)
+        {
+            int start = SelectionStart, end = start + SelectionLength;
+            if (!outdent && start == end)
+            {
+                ReplaceAndSelect(start, 0, "  ", start + 2, 0);
+                return;
+            }
+            string text = Text;
+            int firstLine = FindLineStart(text, start);
+            int lastPosition = end;
+            // A selection ending at column zero belongs to the preceding line.
+            if (end > start && (text[end - 1] == '\r' || text[end - 1] == '\n'))
+            {
+                lastPosition--;
+                if (text[lastPosition] == '\n' && lastPosition > 0 && text[lastPosition - 1] == '\r') lastPosition--;
+            }
+            int lastLine = FindLineStart(text, lastPosition);
+            int rangeEnd = lastLine;
+            while (rangeEnd < text.Length && text[rangeEnd] != '\r' && text[rangeEnd] != '\n') rangeEnd++;
+            var replacement = new StringBuilder();
+            int newStart = start, newEnd = end;
+            bool changed = false;
+            for (int line = firstLine; ;)
+            {
+                int lineEnd = line;
+                while (lineEnd < rangeEnd && text[lineEnd] != '\r' && text[lineEnd] != '\n') lineEnd++;
+                int removed = 0;
+                if (outdent)
+                {
+                    if (line < lineEnd && text[line] == '\t') removed = 1;
+                    else while (removed < 2 && line + removed < lineEnd && text[line + removed] == ' ') removed++;
+                    newStart -= Math.Min(removed, Math.Max(0, start - line));
+                    newEnd -= Math.Min(removed, Math.Max(0, end - line));
+                    changed |= removed > 0;
+                }
+                else
+                {
+                    replacement.Append("  ");
+                    if (line < start) newStart += 2;
+                    newEnd += 2;
+                    changed = true;
+                }
+                replacement.Append(text, line + removed, lineEnd - line - removed);
+                if (line == lastLine) break;
+                int next = lineEnd + 1;
+                if (text[lineEnd] == '\r' && next < text.Length && text[next] == '\n') next++;
+                replacement.Append(text, lineEnd, next - lineEnd);
+                line = next;
+            }
+            if (changed) ReplaceAndSelect(firstLine, rangeEnd - firstLine, replacement.ToString(), newStart, newEnd - newStart);
+        }
+        private static int FindLineStart(string text, int index)
+        {
+            while (index > 0 && text[index - 1] != '\r' && text[index - 1] != '\n') index--;
+            return index;
+        }
+        private void ReplaceAndSelect(int start, int length, string replacement, int selectionStart, int selectionLength)
+        {
+            BeginChange();
+            try
+            {
+                Select(start, length);
+                SelectedText = replacement;
+                Select(selectionStart, selectionLength);
+            }
+            finally { EndChange(); }
+        }
+        protected override void OnPreviewKeyDown(KeyEventArgs e)
+        {
+            // Leave modified shortcuts and IME-processed keys to WPF.
+            if (!e.Handled && !IsReadOnly && AcceptsReturn && e.Key == Key.Return && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                InsertIndentedNewLine();
+                e.Handled = true;
+            }
+            base.OnPreviewKeyDown(e);
+        }
+        private void InsertIndentedNewLine()
+        {
+            string text = Text;
+            int start = SelectionStart, end = start + SelectionLength;
+            int lineStart = start;
+            while (lineStart > 0 && text[lineStart - 1] != '\r' && text[lineStart - 1] != '\n') lineStart--;
+            int indentEnd = lineStart;
+            while (indentEnd < start && IsIndentSpace(text[indentEnd])) indentEnd++;
+            string indent = text.Substring(lineStart, indentEnd - lineStart);
+            int before = start, after = end;
+            while (before > lineStart && IsIndentSpace(text[before - 1])) before--;
+            while (after < text.Length && IsIndentSpace(text[after])) after++;
+            char opening = before > lineStart ? text[before - 1] : '\0';
+            bool opensBlock = "{[(".IndexOf(opening) >= 0 && QuoteAt(text, start) == '\0';
+            bool splitPair = opensBlock && after < text.Length && text[after] == ClosingSymbol(opening);
+            string innerIndent = indent + (opensBlock ? (indent.IndexOf('\t') >= 0 ? "\t" : "  ") : "");
+            string newline = Environment.NewLine;
+            int breakIndex = text.IndexOfAny(new[] { '\r', '\n' });
+            if (breakIndex >= 0)
+                newline = text[breakIndex] == '\r' && breakIndex + 1 < text.Length && text[breakIndex + 1] == '\n'
+                    ? "\r\n" : text[breakIndex].ToString();
+            string inserted = newline + innerIndent;
+            int replaceStart = splitPair ? before : start;
+            int replaceEnd = splitPair ? after : end;
+            int caret = replaceStart + inserted.Length;
+            if (splitPair) inserted += newline + indent;
+            // Whitespace, line breaks and the caret move form one undoable edit.
+            BeginChange();
+            try
+            {
+                Select(replaceStart, replaceEnd - replaceStart);
+                SelectedText = inserted;
+                Select(caret, 0);
+            }
+            finally { EndChange(); }
+        }
+        private static bool IsIndentSpace(char c) { return c == ' ' || c == '\t'; }
+        protected override void OnPreviewTextInput(TextCompositionEventArgs e)
+        {
+            if (!IsReadOnly && e.Text.Length == 1 && "{}[]()\"'".IndexOf(e.Text[0]) >= 0)
+            {
+                char symbol = e.Text[0];
+                string text = Text;
+                int start = SelectionStart, length = SelectionLength;
+                char quote = QuoteAt(text, start);
+                bool escaped = IsEscaped(text, start);
+                if (length == 0 && start < text.Length && text[start] == symbol &&
+                    ((quote == '\0' && "}])".IndexOf(symbol) >= 0) || (quote == symbol && !escaped)))
+                {
+                    Select(start + 1, 0);
+                    e.Handled = true;
+                }
+                else
+                {
+                    char closing = ClosingSymbol(symbol);
+                    if (closing != '\0' && (length > 0 || quote == '\0' && !escaped &&
+                        (start == text.Length || char.IsWhiteSpace(text[start]) || "}]),:".IndexOf(text[start]) >= 0)))
+                    {
+                        // A pair (or wrapping a selection) is one native undo unit.
+                        string selected = SelectedText;
+                        BeginChange();
+                        try
+                        {
+                            SelectedText = symbol + selected + closing;
+                            Select(start + 1, selected.Length);
+                        }
+                        finally { EndChange(); }
+                        e.Handled = true;
+                    }
+                }
+            }
+            base.OnPreviewTextInput(e);
+        }
+        private static char ClosingSymbol(char opening)
+        {
+            switch (opening)
+            {
+                case '{': return '}';
+                case '[': return ']';
+                case '(': return ')';
+                case '"': return '"';
+                case '\'': return '\'';
+                default: return '\0';
+            }
+        }
+        private static bool IsEscaped(string text, int index)
+        {
+            int slashes = 0;
+            while (index > 0 && text[--index] == '\\') slashes++;
+            return slashes % 2 != 0;
+        }
+        private static char QuoteAt(string text, int end)
+        {
+            char quote = '\0';
+            for (int i = 0; i < end; i++)
+            {
+                char c = text[i];
+                if (quote != '\0')
+                {
+                    if (c == '\\') i++;
+                    else if (c == quote) quote = '\0';
+                }
+                else if (c == '"' || c == '\'') quote = c;
+            }
+            return quote;
+        }
         internal bool SelectTokenAt(int index)
         {
             if (!SelectJsonValues) return false;

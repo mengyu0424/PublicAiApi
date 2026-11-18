@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
 using System.Net;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -55,6 +54,8 @@ namespace ApiStudio
 
             loading = true;
             InitializeComponent();
+            StudioChrome.Attach(this, 48, true);
+            UpdateWindowChrome();
             requestBody = new JsonEditor(false); responseBody = new JsonEditor(true);
             AttachEditor(RequestHost, requestBody, "请求体");
             AttachEditor(ResponseHost, responseBody, "响应体");
@@ -87,14 +88,14 @@ namespace ApiStudio
             }), true);
             WorkspaceGrid.SizeChanged += delegate { RestorePositions(); };
             PayloadGrid.SizeChanged += delegate { RestorePositions(); };
-            StateChanged += delegate { RestorePositions(); };
+            StateChanged += delegate { UpdateWindowChrome(); RestorePositions(); };
             Loaded += delegate { RestorePositions(); };
             PreviewKeyDown += HandleShortcuts;
             SourceInitialized += delegate
             {
                 var source = (HwndSource)PresentationSource.FromVisual(this);
                 source.AddHook(HandleSystemTheme);
-                SetCaptionTheme();
+                UpdateCompositionBackground();
             };
 
             try { workspace = store.Load(); }
@@ -147,16 +148,6 @@ namespace ApiStudio
                 RequestRow.Height = new GridLength(Math.Max(RequestRow.MinHeight, Math.Min(maxHeight, height > 0 ? height : Math.Round(availableHeight * .4))));
         }
 
-        [DllImport("dwmapi.dll")] private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
-        private void SetCaptionTheme()
-        {
-            var handle = new WindowInteropHelper(this).Handle;
-            if (handle == IntPtr.Zero) return;
-            int dark = Theme.IsDark ? 1 : 0;
-            try { DwmSetWindowAttribute(handle, 20, ref dark, 4); }
-            catch (DllNotFoundException) { }
-            catch (EntryPointNotFoundException) { }
-        }
         private IntPtr HandleSystemTheme(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
             if ((message == 0x1A || message == 0x31A) && Theme.Mode == AppThemeMode.System)
@@ -176,17 +167,8 @@ namespace ApiStudio
         }
         private void ApplyTheme(bool animate)
         {
-            Resources["Canvas"] = Brush(Theme.Canvas);
-            Resources["Surface"] = Brush(Theme.Surface);
-            Resources["Subtle"] = Brush(Theme.Subtle);
-            Resources["Border"] = Brush(Theme.Border);
-            Resources["Ink"] = Brush(Theme.Ink);
-            Resources["Muted"] = Brush(Theme.Muted);
-            Resources["Hover"] = Brush(Theme.Hover);
-            Resources["Active"] = Brush(Theme.Active);
-            Resources["Accent"] = Brush(Theme.Accent);
-            Resources["Error"] = Brush(Theme.Error);
-            Resources["Grip"] = Brush(Theme.Grip);
+            Theme.ApplyResources(Resources);
+            UpdateCompositionBackground();
             requestBody.RefreshTheme();
             responseBody.RefreshTheme();
             UpdateMethodAppearance();
@@ -196,7 +178,6 @@ namespace ApiStudio
             if (animate && SystemParameters.MenuAnimation)
                 ThemeRotation.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(-25, 0, TimeSpan.FromMilliseconds(180))
                 { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }, FillBehavior = FillBehavior.Stop });
-            SetCaptionTheme();
         }
 
         private void ThemeClick(object sender, RoutedEventArgs e)
@@ -690,6 +671,7 @@ namespace ApiStudio
 
         private void HandleShortcuts(object sender, KeyEventArgs e)
         {
+            if (DialogHost.Content != null) return;
             if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 && RunShortcut(e.Key)) e.Handled = true;
             if (!CollectionTree.IsKeyboardFocusWithin) return;
             if (e.Key == Key.F2) { RenameItem(); e.Handled = true; }
@@ -709,11 +691,18 @@ namespace ApiStudio
         }
         private void Warn(string message, string title)
         {
-            if (IsVisible) MessageBox.Show(this, message, title, MessageBoxButton.OK, MessageBoxImage.Warning);
-            else MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Warning);
+            StudioDialog.CreateMessage(this, message, title, false).ShowModal();
         }
         protected override void OnClosing(CancelEventArgs e)
         {
+            var dialog = DialogHost.Content as StudioDialog;
+            if (dialog != null)
+            {
+                dialog.Close();
+                e.Cancel = true;
+                base.OnClosing(e);
+                return;
+            }
             if (dirty && !SaveWorkspace(true)) e.Cancel = true;
             base.OnClosing(e);
         }

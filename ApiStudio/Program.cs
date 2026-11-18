@@ -17,7 +17,7 @@ namespace ApiStudio
             catch (Exception ex)
             {
                 try { File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "startup-error.log"), ex.ToString()); } catch { }
-                System.Windows.MessageBox.Show("启动失败：\r\n" + ex.Message, "API Studio", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                StudioDialog.CreateMessage(null, "程序遇到异常，无法继续运行。\r\n\r\n" + ex.Message, "程序异常", false).ShowModal();
             }
         }
     }
